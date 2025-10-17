@@ -96,8 +96,10 @@ public class LinkParser extends RecursiveAction {
                     lemma.setSite(site);
                     lemma.setLemma(lemmaText);
                     lemma.setFrequency(1);
+                    lemma = lemmaRepository.save(lemma);
                 } else {
                     lemma.setFrequency(lemma.getFrequency() + 1);
+                    lemma = lemmaRepository.save(lemma);
                 }
                 lemmaRepository.save(lemma);
 

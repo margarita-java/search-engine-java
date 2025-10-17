@@ -5,6 +5,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import searchengine.dto.search.SearchResponse;
 import searchengine.dto.search.SearchResult;
 import searchengine.model.*;
@@ -18,6 +19,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class SearchService {
 
     private final SiteRepository siteRepository;
@@ -51,7 +53,9 @@ public class SearchService {
         double threshold = totalPages * 0.8;
         final Site finalSiteEntity =siteEntity;
         List<Lemma> relevantLemmas = lemmas.keySet().stream()
-                .map(lemma -> lemmaRepository.findByLemmaAndSite(lemma, finalSiteEntity))
+                .map(lemma -> finalSiteEntity != null
+                        ? lemmaRepository.findByLemmaAndSite(lemma, finalSiteEntity)
+                        : lemmaRepository.findByLemma(lemma))
                 .flatMap(Optional::stream)
                 .filter(lemma -> lemma.getFrequency() < threshold)
                 .sorted(Comparator.comparingInt(Lemma::getFrequency))
@@ -100,7 +104,7 @@ public class SearchService {
                 .limit(limit)
                 .map(entry -> {
                     Page page = entry.getKey();
-                    float rel = entry.getValue() / finalMaxAbsRel;
+                    float rel = finalMaxAbsRel == 0 ? 0 :entry.getValue() / finalMaxAbsRel;
 
                     Document doc = Jsoup.parse(page.getContent());
                     String title = doc.title();

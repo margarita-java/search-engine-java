@@ -2,18 +2,18 @@ package searchengine.controllers;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import searchengine.dto.search.SearchResponse;
 import searchengine.dto.statistics.IndexingResponse;
 import searchengine.dto.statistics.StatisticsResponse;
-import searchengine.services.IndexingServise;
+import searchengine.services.IndexingService;
 import searchengine.services.SearchService;
 import searchengine.services.StatisticsService;
 
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
+
 public class ApiController {
 
     private final StatisticsService statisticsService;
@@ -25,32 +25,31 @@ public class ApiController {
     }
 
 
-    private final IndexingServise indexingServise;
+    private final IndexingService indexingService;
 
     @GetMapping("/startIndexing")
-    @Transactional
     public ResponseEntity<IndexingResponse> startIndexing() {
 
-        if (indexingServise.isIndexing()) {
+        if (indexingService.isIndexing()) {
             return ResponseEntity.ok(new IndexingResponse(false, "Индексация уже запушена"));
         }
-        indexingServise.startIndexing();
+        indexingService.startIndexing();
         return ResponseEntity.ok(new IndexingResponse(true));
     }
 
     @GetMapping("/stopIndexing")
     public ResponseEntity<IndexingResponse> stopIndexing() {
 
-        if (!indexingServise.isIndexing()) {
+        if (!indexingService.isIndexing()) {
             return ResponseEntity.ok(new IndexingResponse(false, "Индексация не запущена"));
         }
-        indexingServise.stopIndexing();
+        indexingService.stopIndexing();
         return ResponseEntity.ok(new IndexingResponse(true));
     }
 
     @PostMapping("/indexPage")
     public ResponseEntity<IndexingResponse> indexPage(@RequestParam String url) {
-        return indexingServise.indexPage(url);
+        return indexingService.indexPage(url);
     }
 
     @GetMapping("/search")

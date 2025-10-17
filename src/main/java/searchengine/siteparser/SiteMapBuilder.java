@@ -34,6 +34,7 @@ public class SiteMapBuilder {
     @Autowired
     private LemmaFinder lemmaFinder;
 
+
     /**
      * Метод запускает обход всех страниц сайта с помощью ForkJoinPool.
      * После завершения обхода обновляет статус сайта:

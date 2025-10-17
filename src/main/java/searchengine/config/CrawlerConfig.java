@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "crawler")
 @Getter
 @Setter
+
 public class CrawlerConfig {
 
     private String userAgent;

@@ -7,6 +7,7 @@ import javax.persistence.*;
 import java.util.Objects;
 
 
+
 @Entity
 @Table(name = "page_index")
 @Getter

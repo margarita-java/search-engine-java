@@ -6,6 +6,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.SiteConfig;
 import searchengine.config.SitesList;
 import searchengine.dto.statistics.IndexingResponse;
@@ -18,13 +19,16 @@ import searchengine.siteparser.SiteMapBuilder;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @RequiredArgsConstructor
-public class IndexingServiceImpl implements IndexingServise {
+@Transactional
+public class IndexingServiceImpl implements IndexingService {
 
     private boolean indexing = false;
 
@@ -43,33 +47,38 @@ public class IndexingServiceImpl implements IndexingServise {
 
     @Override
     public void startIndexing() {
-        indexing = true; // Индексация началась
+        indexing = true; // индексация началась
+
+        List<CompletableFuture<Void>> tasks = new ArrayList<>();
 
         for (SiteConfig siteConfig : sitesList.getSites()) {
-            String url = siteConfig.getUrl();
+            tasks.add(CompletableFuture.runAsync(() -> {
+                String url = siteConfig.getUrl();
 
-            // Удаление старых записей
-            Site existingSite = siteRepository.findByUrl(url);
-            if (existingSite != null) {
-                pageRepository.deleteAllBySite(existingSite);
-                siteRepository.delete(existingSite);
-            }
+                // удаляем старые данные
+                Site existingSite = siteRepository.findByUrl(url);
+                if (existingSite != null) {
+                    siteRepository.delete(existingSite);
+                }
 
-            // Создание новой записи о сайте
-            Site site = new Site();
-            site.setUrl(url);
-            site.setName(siteConfig.getName());
-            site.setStatus(Status.INDEXING);
-            site.setStatusTime(LocalDateTime.now());
-            site.setLastError(null);
-            siteRepository.save(site);
+                // создаём новую запись
+                Site site = new Site();
+                site.setUrl(url);
+                site.setName(siteConfig.getName());
+                site.setStatus(Status.INDEXING);
+                site.setStatusTime(LocalDateTime.now());
+                site.setLastError(null);
+                siteRepository.save(site);
 
-            // Запуск обхода сайта в ForkJoinPool
-            siteMapBuilder.build(site);
+                // запускаем обход
+                siteMapBuilder.build(site);
 
+            }));
         }
 
-        indexing = false; // Индексация завершена
+        // снимаем флаг только после завершения всех задач
+        CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0]))
+                .thenRun(() -> indexing = false);
     }
 
     @Override

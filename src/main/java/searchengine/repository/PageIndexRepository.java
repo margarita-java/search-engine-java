@@ -8,6 +8,7 @@ import searchengine.model.PageIndex;
 import java.util.List;
 
 
+
 public interface PageIndexRepository extends JpaRepository<PageIndex, Integer> {
     void deleteAllByPage(Page page);
     List<PageIndex> findAllByPage(Page page);
