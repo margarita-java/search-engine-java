@@ -9,7 +9,7 @@ import java.util.List;
 
 
 
-public interface PageIndexRepository extends JpaRepository<PageIndex, Integer> {
+public interface PageIndexRepository extends JpaRepository<PageIndex, Long> {
     void deleteAllByPage(Page page);
     List<PageIndex> findAllByPage(Page page);
     List<PageIndex> findByLemma(Lemma lemma);

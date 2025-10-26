@@ -18,42 +18,40 @@ public class ApiController {
 
     private final StatisticsService statisticsService;
     private final SearchService searchService;
-
-    @GetMapping("/statistics")
-    public ResponseEntity<StatisticsResponse> statistics() {
-        return ResponseEntity.ok(statisticsService.getStatistics());
-    }
-
-
     private final IndexingService indexingService;
 
+    @GetMapping("/statistics")
+    public StatisticsResponse statistics() {
+        return statisticsService.getStatistics();
+    }
+
     @GetMapping("/startIndexing")
-    public ResponseEntity<IndexingResponse> startIndexing() {
+    public IndexingResponse startIndexing() {
 
         if (indexingService.isIndexing()) {
-            return ResponseEntity.ok(new IndexingResponse(false, "Индексация уже запушена"));
+            return new IndexingResponse(false, "Индексация уже запушена");
         }
         indexingService.startIndexing();
-        return ResponseEntity.ok(new IndexingResponse(true));
+        return new IndexingResponse(true);
     }
 
     @GetMapping("/stopIndexing")
-    public ResponseEntity<IndexingResponse> stopIndexing() {
+    public IndexingResponse stopIndexing() {
 
         if (!indexingService.isIndexing()) {
-            return ResponseEntity.ok(new IndexingResponse(false, "Индексация не запущена"));
+            return new IndexingResponse(false, "Индексация не запущена");
         }
         indexingService.stopIndexing();
-        return ResponseEntity.ok(new IndexingResponse(true));
+        return new IndexingResponse(true);
     }
 
     @PostMapping("/indexPage")
-    public ResponseEntity<IndexingResponse> indexPage(@RequestParam String url) {
+    public IndexingResponse indexPage(@RequestParam String url) {
         return indexingService.indexPage(url);
     }
 
     @GetMapping("/search")
-    public ResponseEntity<SearchResponse> search(@RequestParam(name = "query") String query,
+    public SearchResponse search(@RequestParam(name = "query") String query,
                                                  @RequestParam(name = "site", required = false) String site,
                                                  @RequestParam(name = "offset", defaultValue = "0") int offset,
                                                  @RequestParam(name = "limit", defaultValue = "20") int limit

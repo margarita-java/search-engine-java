@@ -4,12 +4,12 @@ import lombok.RequiredArgsConstructor;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.SiteConfig;
 import searchengine.config.SitesList;
 import searchengine.dto.statistics.IndexingResponse;
+import searchengine.exceptions.BadRequestException;
 import searchengine.model.*;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.PageIndexRepository;
@@ -47,7 +47,7 @@ public class IndexingServiceImpl implements IndexingService {
 
     @Override
     public void startIndexing() {
-        indexing = true; // индексация началась
+        indexing = true;
 
         List<CompletableFuture<Void>> tasks = new ArrayList<>();
 
@@ -55,13 +55,11 @@ public class IndexingServiceImpl implements IndexingService {
             tasks.add(CompletableFuture.runAsync(() -> {
                 String url = siteConfig.getUrl();
 
-                // удаляем старые данные
                 Site existingSite = siteRepository.findByUrl(url);
                 if (existingSite != null) {
                     siteRepository.delete(existingSite);
                 }
 
-                // создаём новую запись
                 Site site = new Site();
                 site.setUrl(url);
                 site.setName(siteConfig.getName());
@@ -70,13 +68,11 @@ public class IndexingServiceImpl implements IndexingService {
                 site.setLastError(null);
                 siteRepository.save(site);
 
-                // запускаем обход
                 siteMapBuilder.build(site);
 
             }));
         }
 
-        // снимаем флаг только после завершения всех задач
         CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0]))
                 .thenRun(() -> indexing = false);
     }
@@ -89,7 +85,7 @@ public class IndexingServiceImpl implements IndexingService {
     }
 
     @Override
-    public ResponseEntity<IndexingResponse> indexPage(String url) {
+    public IndexingResponse indexPage(String url) {
         List<Site> sites = siteRepository.findAll();
         Site site = sites.stream()
                 .filter(s -> url.startsWith(s.getUrl()))
@@ -97,8 +93,7 @@ public class IndexingServiceImpl implements IndexingService {
                 .orElse(null);
 
         if (site == null) {
-            return ResponseEntity.ok(new IndexingResponse(false,
-                    "Данная страница находится за пределами сайтов, указанных в конфигурационном файле"));
+            throw new BadRequestException("Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
         }
 
         String path = url.replaceFirst(site.getUrl(), "");
@@ -110,7 +105,9 @@ public class IndexingServiceImpl implements IndexingService {
             List<PageIndex> indices = pageIndexRepository.findAllByPage(page);
             for (PageIndex index : indices) {
                 Lemma lemma = index.getLemma();
-                lemma.setFrequency(lemma.getFrequency() - 1);
+                // учитываем rank (вхождений на странице)
+                int decrement = Math.round(index.getRank());
+                lemma.setFrequency(lemma.getFrequency() - decrement);
                 if (lemma.getFrequency() <= 0) {
                     lemmaRepository.delete(lemma);
                 } else {
@@ -126,8 +123,7 @@ public class IndexingServiceImpl implements IndexingService {
         try {
             doc = Jsoup.connect(url).get();
         } catch (IOException e) {
-            return ResponseEntity.ok(new IndexingResponse(false,
-                    "Ошибка при попытке получить содержимое страницы: " + e.getMessage()));
+            throw new BadRequestException("Ошибка при попытке получить содержимое страницы: " + e.getMessage());
         }
 
         Page page = new Page();
@@ -148,11 +144,11 @@ public class IndexingServiceImpl implements IndexingService {
                 lemma = new Lemma();
                 lemma.setSite(site);
                 lemma.setLemma(lemmaText);
-                lemma.setFrequency(1);
+                lemma.setFrequency(count);
             } else {
-                lemma.setFrequency(lemma.getFrequency() + 1);
+                lemma.setFrequency(lemma.getFrequency() + count);
             }
-            lemmaRepository.save(lemma);
+            lemma = lemmaRepository.save(lemma);
 
             PageIndex index = new PageIndex();
             index.setPage(page);
@@ -161,6 +157,6 @@ public class IndexingServiceImpl implements IndexingService {
             pageIndexRepository.save(index);
         }
 
-        return ResponseEntity.ok(new IndexingResponse(true));
+        return new IndexingResponse(true);
     }
 }

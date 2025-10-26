@@ -15,10 +15,10 @@ public class Site {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
+    private Long id;
 
     @Enumerated(EnumType.STRING)
-    @Column(columnDefinition = "ENUM('INDEXING', 'INDEXED', 'FAILED')", nullable = false)
+    @Column(name = "status", columnDefinition = "VARCHAR(20)", nullable = false)
     private Status status;
 
     @Column(name = "status_time", nullable = false)

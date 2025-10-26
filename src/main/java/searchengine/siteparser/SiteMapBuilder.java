@@ -1,8 +1,7 @@
 package searchengine.siteparser;
 
-
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import searchengine.config.CrawlerConfig;
 import searchengine.model.Site;
@@ -12,51 +11,59 @@ import searchengine.repository.PageIndexRepository;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 import searchengine.services.LemmaFinder;
+import searchengine.services.PageProcessingService;
 
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class SiteMapBuilder {
-
 
     private final PageRepository pageRepository;
     private final SiteRepository siteRepository;
     private final CrawlerConfig crawlerConfig;
+    private final LemmaRepository lemmaRepository;
+    private final PageIndexRepository pageIndexRepository;
+    private final LemmaFinder lemmaFinder;
+    private final PageProcessingService pageProcessingService;
+
     private final Map<Site, ForkJoinPool> runningPools = new ConcurrentHashMap<>();
-    @Autowired
-    private LemmaRepository lemmaRepository;
-    @Autowired
-    private PageIndexRepository pageIndexRepository;
-    @Autowired
-    private LemmaFinder lemmaFinder;
 
+    private final Map<String, java.util.concurrent.ConcurrentHashMap.KeySetView<String, Boolean>> visitedBySite = new ConcurrentHashMap<>();
 
-    /**
-     * Метод запускает обход всех страниц сайта с помощью ForkJoinPool.
-     * После завершения обхода обновляет статус сайта:
-     * - Если не было ошибок: ставит статус INDEXED.
-     * - Если ошибки были: статус остаётся FAILED (он уже будет установлен внутри LinkParser).
-     */
+    private final java.util.concurrent.ConcurrentHashMap<Site, AtomicInteger> sitePageCounters = new ConcurrentHashMap<>();
 
     public void build(Site site) {
-        String siteUrl = site.getUrl(); // URL главной страницы
+        String siteUrl = site.getUrl();
+        log.info("Starting crawl for site: {}", siteUrl);
+
+        visitedBySite.putIfAbsent(siteUrl, ConcurrentHashMap.newKeySet());
+        java.util.concurrent.ConcurrentHashMap.KeySetView<String, Boolean> visitedSet = visitedBySite.get(siteUrl);
+
         ForkJoinPool pool = new ForkJoinPool();
         runningPools.put(site, pool);
-        LinkParser parserTask = new LinkParser(siteUrl, site, siteRepository, pageRepository, crawlerConfig,
-                lemmaRepository, pageIndexRepository, lemmaFinder);
-        pool.invoke(parserTask);
-        runningPools.remove(site);
 
-        // Если во время обхода ошибок не было, то меняем статус на INDEXED
+        LinkParser parserTask = new LinkParser(siteUrl, site, siteRepository, pageRepository, crawlerConfig,
+                pageProcessingService, pageIndexRepository, lemmaFinder, visitedSet, sitePageCounters);
+
+        pool.invoke(parserTask);
+
+        runningPools.remove(site);
+        visitedBySite.remove(siteUrl);
+        sitePageCounters.remove(site);
+
         if (site.getStatus() != Status.FAILED) {
-            site.setStatus(Status.INDEXED); // успешно завершили обход
-            site.setStatusTime(LocalDateTime.now()); // обновляем время завершения
-            site.setLastError(null); // очищаем ошибку
-            siteRepository.save(site); // сохраняем изменения в базу
+            site.setStatus(Status.INDEXED);
+            site.setStatusTime(LocalDateTime.now());
+            site.setLastError(null);
+            siteRepository.save(site);
+            log.info("Finished crawl for site: {} (INDEXED)", siteUrl);
+        } else {
+            log.warn("Finished crawl for site: {} (FAILED). Error: {}", siteUrl, site.getLastError());
         }
     }
 
@@ -65,17 +72,16 @@ public class SiteMapBuilder {
             Site site = entry.getKey();
             ForkJoinPool pool = entry.getValue();
 
-            pool.shutdownNow(); // Принудительно останавливаем
+            log.info("Shutting down crawl pool for site {}", site.getUrl());
+            pool.shutdownNow();
 
             site.setStatus(Status.FAILED);
             site.setStatusTime(LocalDateTime.now());
             site.setLastError("Индексация остановлена пользователем");
-
             siteRepository.save(site);
         }
         runningPools.clear();
+        visitedBySite.clear();
+        sitePageCounters.clear();
     }
-
-
-
 }

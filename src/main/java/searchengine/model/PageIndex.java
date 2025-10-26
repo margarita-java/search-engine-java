@@ -16,7 +16,7 @@ public class PageIndex {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
+    private Long id;
 
     @ManyToOne
     @JoinColumn(name = "page_id", nullable = false)

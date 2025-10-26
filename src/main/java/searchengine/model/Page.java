@@ -15,7 +15,7 @@ public class Page {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "site_id", nullable = false)
@@ -27,7 +27,7 @@ public class Page {
 
     private int code;
 
-    @Column(columnDefinition = "MEDIUMTEXT", nullable = false)
+    @Column(columnDefinition = "TEXT", nullable = false)
     private String content;
 
     @OneToMany(mappedBy = "page", cascade = CascadeType.ALL, orphanRemoval = true)

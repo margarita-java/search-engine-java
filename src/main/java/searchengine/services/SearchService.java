@@ -3,11 +3,11 @@ package searchengine.services;
 import lombok.RequiredArgsConstructor;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.dto.search.SearchResponse;
 import searchengine.dto.search.SearchResult;
+import searchengine.exceptions.BadRequestException;
 import searchengine.model.*;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.PageIndexRepository;
@@ -28,27 +28,25 @@ public class SearchService {
     private final LemmaRepository lemmaRepository;
     private final PageIndexRepository pageIndexRepository;
 
-    public ResponseEntity<SearchResponse> search(String query, String site, int offset, int limit) {
+    public SearchResponse search(String query, String site, int offset, int limit) {
 
         if (query == null || query.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(new SearchResponse(false, "Задан пустой поисковый запрос"));
+            throw new BadRequestException("Задан пустой поисковый запрос");
         }
 
         Site siteEntity = null;
         if (site != null && !site.isEmpty()) {
             siteEntity = siteRepository.findByUrl(site);
             if (siteEntity == null || siteEntity.getStatus() != Status.INDEXED) {
-                return ResponseEntity.badRequest().body(new SearchResponse(false,"Указанный сайт не проиндексирован"));
+                throw new BadRequestException("Указанный сайт не проиндексирован");
             }
         }
 
-        // получение лемм из запроса
         Map<String, Integer> lemmas = lemmaFinder.collectLemmas(query);
         if (lemmas.isEmpty()) {
-            return ResponseEntity.ok(new SearchResponse(true, 0, List.of()));
+            return new SearchResponse(true, 0, List.of());
         }
 
-        //фильтруем слишком частые леммы
         long totalPages = pageRepository.count();
         double threshold = totalPages * 0.8;
         final Site finalSiteEntity =siteEntity;
@@ -61,7 +59,6 @@ public class SearchService {
                 .sorted(Comparator.comparingInt(Lemma::getFrequency))
                 .collect(Collectors.toList());
 
-        // ищес страницы, где встречаются леммы
         Set<Page> resultPages = new HashSet<>();
         boolean first = true;
 
@@ -73,13 +70,12 @@ public class SearchService {
                 resultPages.addAll(pagesForLemma);
                 first = false;
             } else {
-                resultPages.retainAll(pagesForLemma); // пересечение
+                resultPages.retainAll(pagesForLemma);
             }
 
             if (resultPages.isEmpty()) break;
         }
 
-        // рассчитываем абсолютную релевантность
         Map<Page, Float> pageRelevance = new HashMap<>();
         float maxAbsRel = 0f;
 
@@ -104,7 +100,7 @@ public class SearchService {
                 .limit(limit)
                 .map(entry -> {
                     Page page = entry.getKey();
-                    float rel = finalMaxAbsRel == 0 ? 0 :entry.getValue() / finalMaxAbsRel;
+                    float rel = finalMaxAbsRel == 0 ? 0 : entry.getValue() / finalMaxAbsRel;
 
                     Document doc = Jsoup.parse(page.getContent());
                     String title = doc.title();
@@ -126,7 +122,7 @@ public class SearchService {
         response.setResult(true);
         response.setCount(resultPages.size());
         response.setData(results);
-        return ResponseEntity.ok(response);
+        return response;
 
     }
 }

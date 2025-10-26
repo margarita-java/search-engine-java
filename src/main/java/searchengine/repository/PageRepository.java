@@ -11,7 +11,7 @@ import java.util.Optional;
 
 @Repository
 
-public interface PageRepository extends JpaRepository<Page, Integer> {
+public interface PageRepository extends JpaRepository<Page, Long> {
     void deleteAllBySite(Site site);
     boolean existsByPathAndSite(String path, Site site);
     Optional<Page> findByPathAndSite(String path, Site site);
