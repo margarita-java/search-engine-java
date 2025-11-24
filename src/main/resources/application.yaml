@@ -15,20 +15,12 @@ spring:
     hibernate:
       ddl-auto: none
     show-sql: true
-
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
-
-
-
 indexing-settings:
   sites:
     - url: http://www.playback.ru/
       name: PlayBack
-
-
-
-
 crawler:
   user-agent: Mozilla/5.0 (Windows; U; WindowsNT 5.1; en-US; rv1.8.1.6) Gecko/20070725 Firefox/2.0.0.6
   referrer: http://www.google.com

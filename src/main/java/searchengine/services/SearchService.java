@@ -1,8 +1,6 @@
 package searchengine.services;
-
 import lombok.RequiredArgsConstructor;
 import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.dto.search.SearchResponse;
@@ -13,100 +11,98 @@ import searchengine.repository.LemmaRepository;
 import searchengine.repository.PageIndexRepository;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-
 import java.util.*;
 import java.util.stream.Collectors;
-
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SearchService {
-
     private final SiteRepository siteRepository;
     private final LemmaFinder lemmaFinder;
     private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
     private final PageIndexRepository pageIndexRepository;
-
     public SearchResponse search(String query, String site, int offset, int limit) {
-
         if (query == null || query.trim().isEmpty()) {
             throw new BadRequestException("Задан пустой поисковый запрос");
         }
-
         Site siteEntity = null;
         if (site != null && !site.isEmpty()) {
             siteEntity = siteRepository.findByUrl(site);
-            if (siteEntity == null || siteEntity.getStatus() != Status.INDEXED) {
+            if (siteEntity == null) {
+                throw new BadRequestException("Указанный сайт не существует");
+            }
+            if (siteEntity.getStatus() != Status.INDEXED) {
                 throw new BadRequestException("Указанный сайт не проиндексирован");
             }
         }
-
-        Map<String, Integer> lemmas = lemmaFinder.collectLemmas(query);
-        if (lemmas.isEmpty()) {
+        Map<String, Integer> lemmaMap = lemmaFinder.collectLemmas(query);
+        if (lemmaMap.isEmpty()) {
             return new SearchResponse(true, 0, List.of());
         }
-
-        long totalPages = pageRepository.count();
+        long totalPages = (siteEntity != null)
+                ? pageRepository.countBySite(siteEntity)
+                : pageRepository.count();
         double threshold = totalPages * 0.8;
-        final Site finalSiteEntity =siteEntity;
-        List<Lemma> relevantLemmas = lemmas.keySet().stream()
-                .map(lemma -> finalSiteEntity != null
-                        ? lemmaRepository.findByLemmaAndSite(lemma, finalSiteEntity)
-                        : lemmaRepository.findByLemma(lemma))
-                .flatMap(Optional::stream)
+        final Site finalSiteEntity = siteEntity;
+        List<Lemma> relevantLemmas = lemmaMap.keySet().stream()
+                .map(name -> finalSiteEntity != null
+                        ? lemmaRepository.findByLemmaAndSite(name, finalSiteEntity).orElse(null)
+                        : lemmaRepository.findByLemma(name).orElse(null))
+                .filter(Objects::nonNull)
                 .filter(lemma -> lemma.getFrequency() < threshold)
                 .sorted(Comparator.comparingInt(Lemma::getFrequency))
                 .collect(Collectors.toList());
-
-        Set<Page> resultPages = new HashSet<>();
-        boolean first = true;
-
+        if (relevantLemmas.isEmpty()) {
+            return new SearchResponse(true, 0, List.of());
+        }
+        Set<Page> finalPages = null;
         for (Lemma lemma : relevantLemmas) {
             List<PageIndex> indexes = pageIndexRepository.findByLemma(lemma);
-            Set<Page> pagesForLemma = indexes.stream().map(PageIndex::getPage).collect(Collectors.toSet());
-
-            if (first) {
-                resultPages.addAll(pagesForLemma);
-                first = false;
+            Set<Page> pagesForLemma = indexes.stream()
+                    .map(PageIndex::getPage)
+                    .filter(p -> finalSiteEntity == null || p.getSite().equals(finalSiteEntity))
+                    .collect(Collectors.toSet());
+            if (finalPages == null) {
+                finalPages = new HashSet<>(pagesForLemma);
             } else {
-                resultPages.retainAll(pagesForLemma);
+                finalPages.retainAll(pagesForLemma);
             }
-
-            if (resultPages.isEmpty()) break;
+            if (finalPages.isEmpty()) {
+                break;
+            }
         }
-
-        Map<Page, Float> pageRelevance = new HashMap<>();
+        if (finalPages == null || finalPages.isEmpty()) {
+            return new SearchResponse(true, 0, List.of());
+        }
+        Map<Page, Float> relevance = new HashMap<>();
         float maxAbsRel = 0f;
-
-        for (Page page : resultPages) {
+        for (Page page : finalPages) {
             float absRel = 0f;
             for (Lemma lemma : relevantLemmas) {
-                PageIndex index = pageIndexRepository.findByPageAndLemma(page, lemma);
-                if (index != null) {
-                    absRel += index.getRank();
-                }
+                absRel += pageIndexRepository.findByPageAndLemma(page, lemma)
+                        .map(PageIndex::getRank)
+                        .orElse(0f);
             }
-            pageRelevance.put(page, absRel);
-            maxAbsRel = Math.max(maxAbsRel, absRel);
+            relevance.put(page, absRel);
+            if (absRel > maxAbsRel) {
+                maxAbsRel = absRel;
+            }
         }
-
-        final Map<String, Integer> finalLemmas = lemmas;
-        final float finalMaxAbsRel = maxAbsRel;
-
-        List<SearchResult> results = pageRelevance.entrySet().stream()
+        final float finalMaxRel = maxAbsRel;
+        final Set<String> finalLemmaNames = lemmaMap.keySet();
+        List<SearchResult> results = relevance.entrySet().stream()
                 .sorted(Map.Entry.<Page, Float>comparingByValue().reversed())
                 .skip(offset)
                 .limit(limit)
                 .map(entry -> {
                     Page page = entry.getKey();
-                    float rel = finalMaxAbsRel == 0 ? 0 : entry.getValue() / finalMaxAbsRel;
-
-                    Document doc = Jsoup.parse(page.getContent());
-                    String title = doc.title();
-                    String text = LemmaFinder.extractText(page.getContent());
-                    String snippet = SnippetBuilder.buildSnippet(text, finalLemmas.keySet());
-
+                    float rel = finalMaxRel == 0 ? 0 : entry.getValue() / finalMaxRel;
+                    String html = page.getContent();
+                    String title = Jsoup.parse(html).title();
+                    String text = lemmaFinder.extractText(html);
+                    String snippet = SnippetBuilder.buildSnippet(text, finalLemmaNames);
+                    if (snippet == null) snippet = "";
                     return new SearchResult(
                             page.getSite().getUrl(),
                             page.getSite().getName(),
@@ -117,12 +113,10 @@ public class SearchService {
                     );
                 })
                 .collect(Collectors.toList());
-
         SearchResponse response = new SearchResponse();
         response.setResult(true);
-        response.setCount(resultPages.size());
+        response.setCount(finalPages.size());
         response.setData(results);
         return response;
-
     }
 }

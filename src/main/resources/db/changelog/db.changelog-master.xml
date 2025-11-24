@@ -5,6 +5,11 @@
         xsi:schemaLocation="
          http://www.liquibase.org/xml/ns/dbchangelog
          http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
-
     <include file="db/changelog/changes/001-create-tables.xml"/>
+    <changeSet id="add-unique-lemma-site" author="you">
+        <addUniqueConstraint
+                tableName="lemma"
+                columnNames="site_id, lemma"
+                constraintName="uk_lemma_site_lemma"/>
+    </changeSet>
 </databaseChangeLog>

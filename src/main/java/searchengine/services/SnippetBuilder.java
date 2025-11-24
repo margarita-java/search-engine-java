@@ -1,11 +1,7 @@
 package searchengine.services;
-
 import java.util.Set;
-
 public class SnippetBuilder {
     public static String buildSnippet(String text, Set<String> lemmas) {
-
-
         for (String lemma : lemmas) {
             if (text.toLowerCase().contains(lemma)) {
                 int index = text.toLowerCase().indexOf(lemma);
