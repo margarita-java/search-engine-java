@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 public class LinkParser extends RecursiveAction {
     private final String url;
-    private final Site site;
+    //private final Site site;
+    private final Long siteId;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final CrawlerConfig crawlerConfig;
@@ -31,7 +32,7 @@ public class LinkParser extends RecursiveAction {
     private static final int UPDATE_INTERVAL = 10;
     private final java.util.concurrent.ConcurrentHashMap<Site, AtomicInteger> sitePageCounters;
     public LinkParser(String url,
-                      Site site,
+                      Long siteId,
                       SiteRepository siteRepository,
                       PageRepository pageRepository,
                       CrawlerConfig crawlerConfig,
@@ -41,7 +42,8 @@ public class LinkParser extends RecursiveAction {
                       java.util.concurrent.ConcurrentHashMap.KeySetView<String, Boolean> visitedSet,
                       java.util.concurrent.ConcurrentHashMap<Site, AtomicInteger> sitePageCounters) {
         this.url = url;
-        this.site = site;
+        //this.site = site;
+        this.siteId = siteId;
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
         this.crawlerConfig = crawlerConfig;
@@ -53,6 +55,8 @@ public class LinkParser extends RecursiveAction {
     }
     @Override
     protected void compute() {
+        Site site = siteRepository.findById(siteId)
+                .orElseThrow(() -> new IllegalStateException("Site not found: id=" + siteId));
         try {
             if (!visitedSet.add(url)) {
                 return;
@@ -93,7 +97,7 @@ public class LinkParser extends RecursiveAction {
                 if (absHref.startsWith(site.getUrl() + "/")
                         && !absHref.contains("#")
                         && !absHref.equals(url)) {
-                    tasks.add(new LinkParser(absHref, site, siteRepository, pageRepository, crawlerConfig,
+                    tasks.add(new LinkParser(absHref, siteId, siteRepository, pageRepository, crawlerConfig,
                             pageProcessingService, pageIndexRepository, lemmaFinder, visitedSet, sitePageCounters));
                 }
             }

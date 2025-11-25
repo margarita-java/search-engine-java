@@ -59,6 +59,7 @@ public class IndexingServiceImpl implements IndexingService {
         });
         return new IndexingResponse(true);
     }
+    @Transactional
     private void indexSite(SiteConfig siteConfig) {
         String url = siteConfig.getUrl();
         try {

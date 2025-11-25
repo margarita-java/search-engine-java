@@ -29,59 +29,69 @@ public class PageIndexingService {
         Document doc = Jsoup.connect(url).get();
         return doc.html();
     }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void createOrUpdatePage(Site site, String path, String content) {
+
+        // --- 1. Проверяем существующую страницу ---
         Optional<Page> existingPageOpt = pageRepository.findByPathAndSite(path, site);
+
         if (existingPageOpt.isPresent()) {
             Page existingPage = existingPageOpt.get();
-            pageIndexRepository.findAllByPage(existingPage).forEach(idx -> {
+
+            // --- 1.1 Корректируем частоты лемм ---
+            for (PageIndex idx : existingPage.getIndices()) {
                 Lemma lemma = idx.getLemma();
                 if (lemma != null) {
-                    int newFreq = lemma.getFrequency() - Math.round(idx.getRank());
-                    if (newFreq < 0) newFreq = 0;
-                    lemma.setFrequency(newFreq);
+                    int updatedFreq = lemma.getFrequency() - Math.round(idx.getRank());
+                    lemma.setFrequency(Math.max(updatedFreq, 0)); // исключаем отрицательные
                     lemmaRepository.save(lemma);
-                    }
+                }
+            }
 
-            });
-            pageIndexRepository.deleteAllByPage(existingPage);
+            // --- 1.2 Удаляем страницу ---
+            // КАСКАД САМ УДАЛИТ ВСЕ PageIndex
             pageRepository.delete(existingPage);
         }
+
+        // --- 2. Создаём новую страницу ---
         Page page = new Page();
         page.setSite(site);
         page.setPath(path);
         page.setCode(200);
         page.setContent(content);
         pageRepository.save(page);
+
+        // --- 3. Извлекаем текст и леммы ---
         String text = lemmaFinder.extractText(content);
         Map<String, Integer> lemmaMap = lemmaFinder.collectLemmas(text);
+
+        // --- 4. Создаём / обновляем леммы + PageIndex ---
         for (Map.Entry<String, Integer> entry : lemmaMap.entrySet()) {
+
             String lemmaText = entry.getKey();
             int count = entry.getValue();
-            Lemma lemma = lemmaRepository.findByLemmaAndSite(lemmaText, site).orElseGet(() -> {
-                Lemma newLemma = new Lemma();
-                newLemma.setSite(site);
-                newLemma.setLemma(lemmaText);
-                newLemma.setFrequency(0);
-                return lemmaRepository.save(newLemma);
-            });
-            lemma.setFrequency(lemma.getFrequency() + count);
-            lemma = lemmaRepository.save(lemma);
-            if (lemma == null) {
-                throw new RuntimeException("LEMMA IS NULL for lemmaText=" + lemmaText);
-            }
-            if (lemma.getId() == null) {
-                throw new RuntimeException("LEMMA ID IS NULL EVEN AFTER SAVE: " + lemma.getLemma());
-            }
 
+            // 4.1 Ищем лемму или создаём новую
+            Lemma lemma = lemmaRepository.findByLemmaAndSite(lemmaText, site)
+                    .orElseGet(() -> {
+                        Lemma newLemma = new Lemma();
+                        newLemma.setSite(site);
+                        newLemma.setLemma(lemmaText);
+                        newLemma.setFrequency(0);
+                        return lemmaRepository.save(newLemma);
+                    });
+
+            // 4.2 Обновляем частоту
+            lemma.setFrequency(lemma.getFrequency() + count);
+            lemmaRepository.save(lemma);
+
+            // 4.3 Создаём индекс
             PageIndex pageIndex = new PageIndex();
             pageIndex.setPage(page);
             pageIndex.setLemma(lemma);
             pageIndex.setRank(count);
 
-            if (pageIndex.getLemma() == null) {
-                throw new RuntimeException("PageIndex lemma is NULL before save()");
-            }
             pageIndexRepository.save(pageIndex);
         }
     }

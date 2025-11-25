@@ -40,7 +40,7 @@ public class SiteMapBuilder {
                 visitedBySite.get(siteUrl);
         ForkJoinPool pool = new ForkJoinPool();
         runningPools.put(site, pool);
-        LinkParser parserTask = new LinkParser(siteUrl, site, siteRepository, pageRepository, crawlerConfig,
+        LinkParser parserTask = new LinkParser(siteUrl, site.getId(), siteRepository, pageRepository, crawlerConfig,
                 pageProcessingService, pageIndexRepository, lemmaFinder, visitedSet, sitePageCounters);
         pool.invoke(parserTask);
         runningPools.remove(site);
